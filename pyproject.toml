@@ -1,22 +1,40 @@
 [project]
-name = "python-pix"
+name = "vessel"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-authors = [
-    { name = "Caio Carvalho", email = "caiocarvalho.py@gmail.com" }
+description = "PIX transfer ledger for the Codecon Rinha de Backend"
+requires-python = "==3.14.*"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "msgspec>=0.21.1",
+    "uvicorn>=0.52.4",
+    "uvloop>=0.22.1",
+    "httptools>=0.8.0",
 ]
-requires-python = ">=3.14"
-dependencies = []
 
-[project.scripts]
-python-pix = "python_pix:main"
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "httpx>=0.28.1",
+    "ruff>=0.16.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+
+[tool.ruff]
+line-length = 88
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "PL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004"]
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
 build-backend = "uv_build"
-
-[dependency-groups]
-dev = [
-    "ruff>=0.16.6",
-]
