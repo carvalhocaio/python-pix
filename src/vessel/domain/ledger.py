@@ -65,16 +65,17 @@ class Ledger:
 
         for _ in range(budget):
             transfer = pending.popleft()
-            payer = transfer.payee_id
+            payer_id = transfer.payer_id
+            payee_id = transfer.payee_id
             amount = transfer.amount
+            balance = balances[payer_id]
 
-            if balances[payer] >= amount:
-                payee = transfer.payee_id
-                balances[payer] -= amount
-                balances[payee] += amount
+            if balance >= amount:
+                balances[payer_id] = balance - amount
+                balances[payee_id] += amount
                 transfer.status = TransferStatus.COMPLETED
-                history[payer].append(transfer)
-                history[payee].append(transfer)
+                history[payer_id].append(transfer)
+                history[payee_id].append(transfer)
             else:
                 transfer.status = TransferStatus.FAILED
                 transfer.failure_reason = FailureReason.INSUFFICIENT_FUNDS
