@@ -1,4 +1,4 @@
-.PHONY: help lint lint-fix format format-check check
+.PHONY: help lint lint-fix format format-check check test
 
 help:
 	@echo "Comandos disponíveis no Makefile:"
@@ -7,6 +7,7 @@ help:
 	@echo "  make format       - Formata o código (ruff format)"
 	@echo "  make format-check - Verifica se o código está formatado (ruff format --check)"
 	@echo "  make check        - Executa o linter e valida a formatação"
+	@echo "  make test         - Executa os testes (pytest tests/ -v)"
 
 lint:
 	uv run ruff check .
@@ -22,3 +23,5 @@ format-check:
 
 check: lint format-check
 
+test:
+	uv run pytest tests/ -v
