@@ -182,7 +182,7 @@ class TestStatement:
         funded.settle()
 
         statement = funded.statement(PAYER)
-        replayed = 100_00 + sum(
+        replayed = 100_000 + sum(
             t.amount if t.payee_id == PAYER else -t.amount for t in statement.transfers
         )
 
