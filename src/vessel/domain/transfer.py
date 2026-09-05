@@ -13,7 +13,7 @@ class FailureReason(StrEnum):
     INSUFFICIENT_FUNDS = "insufficient_funds"
 
 
-class Transfer(msgspec.Struct, gc=False):
+class Transfer(msgspec.Struct, rename="camel", gc=False):
     id: str
     payer_id: str
     payee_id: str
@@ -24,7 +24,7 @@ class Transfer(msgspec.Struct, gc=False):
     created_at: str
 
 
-class Statement(msgspec.Struct):
+class Statement(msgspec.Struct, rename="camel"):
     account_id: str
     balance: int
     transfers: list[Transfer]
