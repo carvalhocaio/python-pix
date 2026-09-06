@@ -1,7 +1,11 @@
+import asyncio
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from vessel.application.settlement import SettlementWorker
 from vessel.domain.ledger import Ledger
+from vessel.domain.transfer import TransferStatus
 from vessel.infrastructure.http.app import create_app
 
 PAYER = "acc-payer"
@@ -296,11 +300,11 @@ class TestRouting:
 class TestLifespan:
     async def test_complete_startup_and_shutdown(self, ledger: Ledger) -> None:
         app = create_app(ledger)
-        events = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+        incoming = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
         sent: list[str] = []
 
         async def receive() -> dict:
-            return next(events)
+            return next(incoming)
 
         async def send(message: dict) -> None:
             sent.append(message["type"])
@@ -308,3 +312,81 @@ class TestLifespan:
         await app({"type": "lifespan"}, receive, send)
 
         assert sent == ["lifespan.startup.complete", "lifespan.shutdown.complete"]
+
+    async def test_run_hooks_in_order(self, ledger: Ledger) -> None:
+        calls: list[str] = []
+
+        def record(name: str):
+            async def hook() -> None:
+                calls.append(name)
+
+            return hook
+
+        app = create_app(
+            ledger,
+            on_startup=(record("open-pool"), record("start-worker")),
+            on_shutdown=(record("stop-worker"), record("close-pool")),
+        )
+        incoming = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+
+        async def receive() -> dict:
+            return next(incoming)
+
+        async def send(message: dict) -> None:
+            return None
+
+        await app({"type": "lifespan"}, receive, send)
+
+        assert calls == ["open-pool", "start-worker", "stop-worker", "close-pool"]
+
+    async def test_defer_shutdown_hooks(self, ledger: Ledger) -> None:
+        calls: list[str] = []
+        at_startup: list[str] = []
+
+        async def opened() -> None:
+            calls.append("opened")
+
+        async def closed() -> None:
+            calls.append("closed")
+
+        app = create_app(ledger, on_startup=(opened,), on_shutdown=(closed,))
+        incoming = iter([{"type": "lifespan.startup"}, {"type": "lifespan.shutdown"}])
+
+        async def receive() -> dict:
+            return next(incoming)
+
+        async def send(message: dict) -> None:
+            if message["type"] == "lifespan.startup.complete":
+                at_startup.extend(calls)
+
+        await app({"type": "lifespan"}, receive, send)
+
+        assert at_startup == ["opened"]
+        assert calls == ["opened", "closed"]
+
+    async def test_settle_while_the_app_is_up(self, ledger: Ledger) -> None:
+        worker = SettlementWorker(ledger, batch_size=8, idle_delay=0.001)
+        app = create_app(ledger, on_startup=(worker.start,), on_shutdown=(worker.stop,))
+        transfer = ledger.submit(PAYER, PAYEE, 1_000, "key-1")[0]
+        shutdown = asyncio.Event()
+        incoming = iter([{"type": "lifespan.startup"}])
+
+        async def receive() -> dict:
+            message = next(incoming, None)
+            if message is not None:
+                return message
+            await shutdown.wait()
+            return {"type": "lifespan.shutdown"}
+
+        async def send(message: dict) -> None:
+            return None
+
+        lifespan = asyncio.create_task(app({"type": "lifespan"}, receive, send))
+        for _ in range(100):
+            if transfer.status is TransferStatus.COMPLETED:
+                break
+            await asyncio.sleep(0.001)
+        shutdown.set()
+        await lifespan
+
+        assert transfer.status is TransferStatus.COMPLETED

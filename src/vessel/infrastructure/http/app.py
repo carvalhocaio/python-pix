@@ -1,4 +1,4 @@
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
 import msgspec
 
@@ -11,6 +11,7 @@ Message = dict
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 Response = tuple[Message, Message]
+Hook = Callable[[], Awaitable[None]]
 
 _CONTENT_TYPE = (b"content-type", b"application/json")
 
@@ -94,23 +95,38 @@ async def _create_account(ledger: Ledger, receive: Receive, send: Send) -> None:
     await _reply_json(send, 201, encode(payload))
 
 
-async def _lifespan(receive: Receive, send: Send) -> None:
+async def _lifespan(
+    receive: Receive,
+    send: Send,
+    on_startup: Sequence[Hook],
+    on_shutdown: Sequence[Hook],
+) -> None:
     while True:
         message = await receive()
+
         if message["type"] == "lifespan.startup":
+            for hook in on_startup:
+                await hook()
             await send({"type": "lifespan.startup.complete"})
+
         elif message["type"] == "lifespan.shutdown":
+            for hook in on_shutdown:
+                await hook()
             await send({"type": "lifespan.shutdown.complete"})
             return
 
 
-def create_app(ledger: Ledger) -> Callable[[Message, Receive, Send], Awaitable[None]]:
+def create_app(
+    ledger: Ledger,
+    on_startup: Sequence[Hook] = (),
+    on_shutdown: Sequence[Hook] = (),
+) -> Callable[[Message, Receive, Send], Awaitable[None]]:
     statement_of = ledger.statement
     transfer_by_id = ledger.find_transfer
 
     async def app(scope: Message, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
-            await _lifespan(receive, send)
+            await _lifespan(receive, send, on_startup, on_shutdown)
             return
 
         route, param = resolve(scope["method"], scope["path"])
