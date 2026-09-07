@@ -7,7 +7,15 @@ from vessel.domain.transfer import FailureReason, Statement, Transfer, TransferS
 
 
 class Ledger:
-    __slots__ = ("_balances", "_by_key", "_history", "_pending", "_transfers")
+    __slots__ = (
+        "_balances",
+        "_by_key",
+        "_dirty",
+        "_history",
+        "_pending",
+        "_settled",
+        "_transfers",
+    )
 
     def __init__(self) -> None:
         self._balances: dict[str, int] = {}
@@ -15,19 +23,18 @@ class Ledger:
         self._by_key: dict[str, Transfer] = {}
         self._history: dict[str, list[Transfer]] = {}
         self._pending: deque[Transfer] = deque()
+        self._settled: deque[Transfer] = deque()
+        self._dirty: set[str] = set()
 
     def open_account(self, account_id: str, balance: int) -> None:
         if account_id in self._balances:
             raise AccountAlreadyExists
         self._balances[account_id] = balance
         self._history[account_id] = []
+        self._dirty.add(account_id)
 
     def submit(
-        self,
-        payer_id: str,
-        payee_id: str,
-        amount: int,
-        idempotency_key: str,
+        self, payer_id: str, payee_id: str, amount: int, idempotency_key: str
     ) -> tuple[Transfer, bool]:
         known = self._by_key.get(idempotency_key)
         if known is not None:
@@ -47,7 +54,7 @@ class Ledger:
             idempotency_key=idempotency_key,
             status=TransferStatus.PENDING,
             failure_reason=None,
-            created_at=datetime.now(UTC).isoformat(),
+            created_at=datetime.now(UTC).isoformat(timespec="microseconds"),
         )
         self._by_key[idempotency_key] = transfer
         self._transfers[transfer.id] = transfer
@@ -58,6 +65,8 @@ class Ledger:
         pending = self._pending
         balances = self._balances
         history = self._history
+        settled = self._settled
+        mark_dirty = self._dirty.add
 
         budget = len(pending)
         if limit is not None and limit < budget:
@@ -76,11 +85,33 @@ class Ledger:
                 transfer.status = TransferStatus.COMPLETED
                 history[payer_id].append(transfer)
                 history[payee_id].append(transfer)
+                mark_dirty(payer_id)
+                mark_dirty(payee_id)
             else:
                 transfer.status = TransferStatus.FAILED
                 transfer.failure_reason = FailureReason.INSUFFICIENT_FUNDS
 
+            settled.append(transfer)
+
         return budget
+
+    def drain_settled(self, limit: int) -> list[Transfer]:
+        settled = self._settled
+        count = len(settled)
+        count = min(count, limit)
+
+        popleft = settled.popleft
+        return [popleft() for _ in range(count)]
+
+    def drain_dirty_balances(self) -> list[tuple[str, int]]:
+        dirty = self._dirty
+        if not dirty:
+            return []
+
+        balances = self._balances
+        drained = [(account_id, balances[account_id]) for account_id in dirty]
+        dirty.clear()
+        return drained
 
     def find_transfer(self, transfer_id: str) -> Transfer | None:
         return self._transfers.get(transfer_id)
