@@ -1,27 +1,26 @@
-.PHONY: help lint lint-fix format format-check check test
+CHALLENGE_REF := 5bee8420d85cb5737b2d2e1648b20c682b713a9b
+CHALLENGE_URL := https://raw.githubusercontent.com/codecon-dev/versus-rinha-de-backend/$(CHALLENGE_REF)/editions/02-pix
+CORRECTNESS_FILES := package.json package-lock.json vitest.config.ts helpers.ts \
+	round1-basics.test.ts round2-funds.test.ts \
+	round3-idempotency.test.ts round4-concurrency.test.ts
+LOAD_FILES := throughput.js latency.js
+API_URL ?= http://localhost:3000
 
-help:
-	@echo "Comandos disponíveis no Makefile:"
-	@echo "  make lint         - Executa o linter (ruff check)"
-	@echo "  make lint-fix     - Corrige automaticamente problemas do linter (ruff check --fix)"
-	@echo "  make format       - Formata o código (ruff format)"
-	@echo "  make format-check - Verifica se o código está formatado (ruff format --check)"
-	@echo "  make check        - Executa o linter e valida a formatação"
-	@echo "  make test         - Executa os testes (pytest tests/ -v)"
+.PHONY: challenge verify bench
 
-lint:
-	uv run ruff check .
+challenge:
+	@mkdir -p challenge/correctness challenge/load
+	@for f in $(CORRECTNESS_FILES); do \
+		curl -sfS -o challenge/correctness/$$f \
+			$(CHALLENGE_URL)/tests/correctness/$$f || exit 1; \
+	done
+	@for f in $(LOAD_FILES); do \
+		curl -sfS -o challenge/load/$$f $(CHALLENGE_URL)/tests/load/$$f || exit 1; \
+	done
+	@cd challenge/correctness && npm install
 
-lint-fix:
-	uv run ruff check --fix .
+verify:
+	@cd challenge/correctness && API_URL=$(API_URL) npx vitest run --reporter=verbose
 
-format:
-	uv run ruff format .
-
-format-check:
-	uv run ruff format --check .
-
-check: lint format-check
-
-test:
-	uv run pytest tests/ -v
+bench:
+	@cd challenge/load && k6 run throughput.js && k6 run latency.js
