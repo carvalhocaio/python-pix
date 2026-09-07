@@ -6,7 +6,37 @@ CORRECTNESS_FILES := package.json package-lock.json vitest.config.ts helpers.ts 
 LOAD_FILES := throughput.js latency.js
 API_URL ?= http://localhost:3000
 
-.PHONY: challenge verify bench
+.PHONY: help lint lint-fix format format-check check test challenge verify bench
+
+help:
+	@echo "Available commands in Makefile:"
+	@echo "  make help         - Show this help message"
+	@echo "  make lint         - Run linter (ruff check)"
+	@echo "  make lint-fix     - Automatically fix linter issues (ruff check --fix)"
+	@echo "  make format       - Format code (ruff format)"
+	@echo "  make format-check - Check code formatting (ruff format --check)"
+	@echo "  make check        - Run linter and check formatting"
+	@echo "  make test         - Run tests (pytest tests/ -v)"
+	@echo "  make challenge    - Download challenge test suites and install dependencies"
+	@echo "  make verify       - Run correctness tests (vitest)"
+	@echo "  make bench        - Run load tests (k6)"
+
+lint:
+	uv run ruff check .
+
+lint-fix:
+	uv run ruff check --fix .
+
+format:
+	uv run ruff format .
+
+format-check:
+	uv run ruff format --check .
+
+check: lint format-check
+
+test:
+	uv run pytest tests/ -v
 
 challenge:
 	@mkdir -p challenge/correctness challenge/load
