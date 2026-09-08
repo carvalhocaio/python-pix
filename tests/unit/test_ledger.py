@@ -1,8 +1,9 @@
+import msgspec
 import pytest
 
 from vessel.domain.errors import AccountAlreadyExists, SelfTransfer, UnknownAccount
 from vessel.domain.ledger import Ledger
-from vessel.domain.transfer import FailureReason, TransferStatus
+from vessel.domain.transfer import FailureReason, Statement, TransferStatus
 
 PAYER = "acc-payer"
 PAYEE = "acc-payee"
@@ -22,9 +23,17 @@ def funded(ledger: Ledger) -> Ledger:
 
 
 def submit(
-    ledger: Ledger, amount: int, key: str, payer: str = PAYER, payee: str = PAYEE
+    ledger: Ledger,
+    amount: int,
+    key: str,
+    payer: str = PAYER,
+    payee: str = PAYEE,
 ):
     return ledger.submit(payer, payee, amount, key)
+
+
+def entries(statement: Statement) -> list[dict]:
+    return [msgspec.json.decode(entry) for entry in reversed(statement.entries)]
 
 
 class TestAccounts:
@@ -35,7 +44,7 @@ class TestAccounts:
 
         assert statement is not None
         assert statement.balance == 100_000
-        assert statement.transfers == []
+        assert statement.entries == []
 
     def test_rejects_a_duplicated_id(self, ledger: Ledger) -> None:
         ledger.open_account(PAYER, 1_000)
@@ -163,7 +172,7 @@ class TestStatement:
 
         statement = ledger.statement(PAYEE)
 
-        assert [t.id for t in statement.transfers] == [completed.id]
+        assert [e["id"] for e in entries(statement)] == [completed.id]
 
     def test_lists_both_sides_newest_first(self, funded: Ledger) -> None:
         funded.open_account("acc-third", 50_000)
@@ -173,7 +182,7 @@ class TestStatement:
 
         statement = funded.statement(PAYER)
 
-        assert [t.id for t in statement.transfers] == [incoming.id, outgoing.id]
+        assert [e["id"] for e in entries(statement)] == [incoming.id, outgoing.id]
         assert statement.balance == 98_000
 
     def test_replays_to_the_current_balance(self, funded: Ledger) -> None:
@@ -183,7 +192,8 @@ class TestStatement:
 
         statement = funded.statement(PAYER)
         replayed = 100_000 + sum(
-            t.amount if t.payee_id == PAYER else -t.amount for t in statement.transfers
+            e["amount"] if e["payeeId"] == PAYER else -e["amount"]
+            for e in entries(statement)
         )
 
         assert replayed == statement.balance

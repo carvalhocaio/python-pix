@@ -1,9 +1,14 @@
 from collections import deque
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import uuid4
 
+import msgspec
+
 from vessel.domain.errors import AccountAlreadyExists, SelfTransfer, UnknownAccount
 from vessel.domain.transfer import FailureReason, Statement, Transfer, TransferStatus
+
+Renderer = Callable[[Transfer], bytes]
 
 
 class Ledger:
@@ -13,15 +18,17 @@ class Ledger:
         "_dirty",
         "_history",
         "_pending",
+        "_render",
         "_settled",
         "_transfers",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, render: Renderer = msgspec.json.encode) -> None:
+        self._render = render
         self._balances: dict[str, int] = {}
         self._transfers: dict[str, Transfer] = {}
         self._by_key: dict[str, Transfer] = {}
-        self._history: dict[str, list[Transfer]] = {}
+        self._history: dict[str, list[bytes]] = {}
         self._pending: deque[Transfer] = deque()
         self._settled: deque[Transfer] = deque()
         self._dirty: set[str] = set()
@@ -67,6 +74,7 @@ class Ledger:
         history = self._history
         settled = self._settled
         mark_dirty = self._dirty.add
+        render = self._render
 
         budget = len(pending)
         if limit is not None and limit < budget:
@@ -83,8 +91,9 @@ class Ledger:
                 balances[payer_id] = balance - amount
                 balances[payee_id] += amount
                 transfer.status = TransferStatus.COMPLETED
-                history[payer_id].append(transfer)
-                history[payee_id].append(transfer)
+                entry = render(transfer)
+                history[payer_id].append(entry)
+                history[payee_id].append(entry)
                 mark_dirty(payer_id)
                 mark_dirty(payee_id)
             else:
@@ -123,5 +132,5 @@ class Ledger:
         return Statement(
             account_id=account_id,
             balance=balance,
-            transfers=self._history[account_id][::-1],
+            entries=self._history[account_id],
         )

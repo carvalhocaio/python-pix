@@ -24,7 +24,7 @@ class Transfer(msgspec.Struct, rename="camel", gc=False):
     created_at: str
 
 
-class Statement(msgspec.Struct, rename="camel"):
+class Statement(msgspec.Struct):
     account_id: str
     balance: int
-    transfers: list[Transfer]
+    entries: list[bytes]

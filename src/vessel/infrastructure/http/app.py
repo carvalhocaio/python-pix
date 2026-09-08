@@ -4,6 +4,7 @@ import msgspec
 
 from vessel.domain.errors import AccountAlreadyExists, SelfTransfer, UnknownAccount
 from vessel.domain.ledger import Ledger
+from vessel.domain.transfer import Statement
 from vessel.infrastructure.http.router import Route, resolve
 from vessel.infrastructure.http.schemas import decode_account, decode_transfer, encode
 
@@ -14,6 +15,13 @@ Response = tuple[Message, Message]
 Hook = Callable[[], Awaitable[None]]
 
 _CONTENT_TYPE = (b"content-type", b"application/json")
+_STATEMENT_HEAD = b'{"accountId":%s,"balance":%d,"transfers":['
+_STATEMENT_TAIL = b"]}"
+
+
+def statement_body(statement: Statement) -> bytes:
+    head = _STATEMENT_HEAD % (encode(statement.account_id), statement.balance)
+    return head + b",".join(reversed(statement.entries)) + _STATEMENT_TAIL
 
 
 def _canned(status: int, body: bytes) -> Response:
@@ -138,7 +146,7 @@ def create_app(
             if statement is None:
                 await _reply(send, _NOT_FOUND)
             else:
-                await _reply_json(send, 200, encode(statement))
+                await _reply_json(send, 200, statement_body(statement))
         elif route is Route.GET_TRANSFER:
             transfer = transfer_by_id(param)
             if transfer is None:
