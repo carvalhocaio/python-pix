@@ -5,8 +5,10 @@ CORRECTNESS_FILES := package.json package-lock.json vitest.config.ts helpers.ts 
 	round3-idempotency.test.ts round4-concurrency.test.ts
 LOAD_FILES := throughput.js latency.js
 API_URL ?= http://localhost:3000
+DOCKER ?= docker
+STATS_FILE := /tmp/vessel-stats.txt
 
-.PHONY: help lint lint-fix format format-check check test challenge verify bench
+.PHONY: help lint lint-fix format format-check check test challenge verify bench wait stats stats-peak
 
 help:
 	@echo "Available commands in Makefile:"
@@ -20,6 +22,9 @@ help:
 	@echo "  make challenge    - Download challenge test suites and install dependencies"
 	@echo "  make verify       - Run correctness tests (vitest)"
 	@echo "  make bench        - Run load tests (k6)"
+	@echo "  make wait         - Wait for API to be healthy"
+	@echo "  make stats        - Record docker stats to file"
+	@echo "  make stats-peak   - Show top 5 peak stats"
 
 lint:
 	uv run ruff check .
@@ -49,8 +54,28 @@ challenge:
 	done
 	@cd challenge/correctness && npm install
 
-verify:
+wait:
+	@printf 'waiting for %s/health' $(API_URL)
+	@until curl -sf $(API_URL)/health > /dev/null 2>&1; do \
+		printf '.'; sleep 0.2; \
+	done
+	@echo ' ok'
+
+verify: wait
 	@cd challenge/correctness && API_URL=$(API_URL) npx vitest run --reporter=verbose
 
-bench:
+bench: wait
 	@cd challenge/load && k6 run throughput.js && k6 run latency.js
+
+stats:
+	@: > $(STATS_FILE)
+	@echo "recording to $(STATS_FILE) — ctrl-c to stop"
+	@while true; do \
+		$(DOCKER) stats --no-stream \
+			--format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' >> $(STATS_FILE); \
+		sleep 1; \
+	done
+
+stats-peak:
+	@sort -t' ' -k2 -gr $(STATS_FILE) | head -5
+
