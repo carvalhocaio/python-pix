@@ -62,6 +62,8 @@ class Database:
             await pool.close()
 
     async def save_balances(self, balances: Sequence[tuple[str, int]]) -> None:
+        if self._pool is None:
+            raise RuntimeError("Database pool is not open")
         await self._pool.execute(
             SAVE_BALANCES,
             [account_id for account_id, _ in balances],
@@ -69,6 +71,8 @@ class Database:
         )
 
     async def save_transfers(self, transfers: Sequence[Transfer]) -> None:
+        if self._pool is None:
+            raise RuntimeError("Database pool is not open")
         await self._pool.execute(
             SAVE_TRANSFERS,
             [t.id for t in transfers],

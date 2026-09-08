@@ -56,9 +56,7 @@ class TestWhenTransfersAreRendered:
 
         assert [status for _, status in renderer.seen] == [TransferStatus.COMPLETED]
 
-    def test_skip_failed_transfers(
-        self, ledger: Ledger, renderer: SpyRenderer
-    ) -> None:
+    def test_skip_failed_transfers(self, ledger: Ledger, renderer: SpyRenderer) -> None:
         submit(ledger, 1_000_000, "key-broke")
         ledger.settle()
 
@@ -70,8 +68,12 @@ class TestWhatIsStored:
         submit(ledger, 2_500, "key-1")
         ledger.settle()
 
-        payer = ledger.statement(PAYER).entries
-        payee = ledger.statement(PAYEE).entries
+        payer_statement = ledger.statement(PAYER)
+        payee_statement = ledger.statement(PAYEE)
+        assert payer_statement is not None
+        assert payee_statement is not None
+        payer = payer_statement.entries
+        payee = payee_statement.entries
 
         assert payer[0] is payee[0]
 
@@ -79,7 +81,9 @@ class TestWhatIsStored:
         transfer = submit(ledger, 2_500, "key-1")
         ledger.settle()
 
-        entry = msgspec.json.decode(ledger.statement(PAYER).entries[0])
+        statement = ledger.statement(PAYER)
+        assert statement is not None
+        entry = msgspec.json.decode(statement.entries[0])
 
         assert entry == {
             "id": transfer.id,
@@ -97,9 +101,8 @@ class TestWhatIsStored:
         second = submit(ledger, 200, "key-2")
         ledger.settle()
 
-        ids = [
-            msgspec.json.decode(entry)["id"]
-            for entry in ledger.statement(PAYER).entries
-        ]
+        statement = ledger.statement(PAYER)
+        assert statement is not None
+        ids = [msgspec.json.decode(entry)["id"] for entry in statement.entries]
 
         assert ids == [first.id, second.id]

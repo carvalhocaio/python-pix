@@ -2,6 +2,7 @@ import msgspec
 import pytest
 
 from vessel.domain.transfer import FailureReason, Statement, Transfer, TransferStatus
+from vessel.infrastructure.http.app import statement_body
 from vessel.infrastructure.http.schemas import (
     AccountPayload,
     TransferPayload,
@@ -152,10 +153,10 @@ class TestEncoding:
 
     def test_encodes_a_statement_in_camel_case(self) -> None:
         statement = Statement(
-            account_id="acc-1", balance=97_500, transfers=[transfer()]
+            account_id="acc-1", balance=97_500, entries=[encode(transfer())]
         )
 
-        encoded = msgspec.json.decode(encode(statement))
+        encoded = msgspec.json.decode(statement_body(statement))
 
         assert encoded["accountId"] == "acc-1"
         assert encoded["balance"] == 97_500

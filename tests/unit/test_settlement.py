@@ -59,7 +59,9 @@ class TestBeforeStart:
         await asyncio.sleep(0.01)
 
         assert transfer.status is TransferStatus.PENDING
-        assert ledger.statement(PAYEE).balance == 0
+        statement = ledger.statement(PAYEE)
+        assert statement is not None
+        assert statement.balance == 0
 
 
 class TestRunning:
@@ -71,7 +73,9 @@ class TestRunning:
         await worker.start()
 
         await wait_until(lambda: transfer.status is TransferStatus.COMPLETED)
-        assert ledger.statement(PAYEE).balance == 1_000
+        statement = ledger.statement(PAYEE)
+        assert statement is not None
+        assert statement.balance == 1_000
 
     async def test_keep_settling_after_going_idle(
         self, ledger: Ledger, worker: SettlementWorker
@@ -91,7 +95,9 @@ class TestRunning:
         await worker.start()
 
         await wait_until(lambda: broke.status is TransferStatus.FAILED)
-        assert ledger.statement(PAYER).balance == 100_000
+        statement = ledger.statement(PAYER)
+        assert statement is not None
+        assert statement.balance == 100_000
 
     async def test_preserve_arrival_order_across_batches(
         self, worker: SettlementWorker
@@ -135,7 +141,9 @@ class TestStop:
         await worker.stop()
 
         assert all(t.status is TransferStatus.COMPLETED for t in transfers)
-        assert ledger.statement(PAYEE).balance == 2_000
+        statement = ledger.statement(PAYEE)
+        assert statement is not None
+        assert statement.balance == 2_000
 
     async def test_be_safe_without_a_start(self, worker: SettlementWorker) -> None:
         await worker.stop()

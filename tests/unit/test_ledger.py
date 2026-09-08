@@ -32,8 +32,15 @@ def submit(
     return ledger.submit(payer, payee, amount, key)
 
 
-def entries(statement: Statement) -> list[dict]:
+def entries(statement: Statement | None) -> list[dict]:
+    assert statement is not None
     return [msgspec.json.decode(entry) for entry in reversed(statement.entries)]
+
+
+def balance_of(ledger: Ledger, account_id: str) -> int:
+    statement = ledger.statement(account_id)
+    assert statement is not None
+    return statement.balance
 
 
 class TestAccounts:
@@ -80,8 +87,8 @@ class TestSubmission:
         assert transfer.status is TransferStatus.PENDING
         assert transfer.failure_reason is None
         assert transfer.amount == 2_500
-        assert funded.statement(PAYER).balance == 100_000
-        assert funded.statement(PAYEE).balance == 0
+        assert balance_of(funded, PAYER) == 100_000
+        assert balance_of(funded, PAYEE) == 0
 
     def test_accepts_an_amount_beyond_the_balance(self, funded: Ledger) -> None:
         transfer, _ = submit(funded, 1_000_000, "key-1")
@@ -103,8 +110,8 @@ class TestSubmission:
 
         funded.settle()
 
-        assert funded.statement(PAYER).balance == 97_500
-        assert funded.statement(PAYEE).balance == 2_500
+        assert balance_of(funded, PAYER) == 97_500
+        assert balance_of(funded, PAYEE) == 2_500
 
 
 class TestSettlement:
@@ -115,15 +122,15 @@ class TestSettlement:
 
         assert transfer.status is TransferStatus.COMPLETED
         assert transfer.failure_reason is None
-        assert funded.statement(PAYER).balance == 97_500
-        assert funded.statement(PAYEE).balance == 2_500
+        assert balance_of(funded, PAYER) == 97_500
+        assert balance_of(funded, PAYEE) == 2_500
 
     def test_drains_the_exact_balance(self, funded: Ledger) -> None:
         transfer, _ = submit(funded, 100_000, "key-1")
         funded.settle()
 
         assert transfer.status is TransferStatus.COMPLETED
-        assert funded.statement(PAYER).balance == 0
+        assert balance_of(funded, PAYER) == 0
 
     def test_fails_without_moving_money_when_funds_are_short(
         self, funded: Ledger
@@ -133,8 +140,8 @@ class TestSettlement:
 
         assert transfer.status is TransferStatus.FAILED
         assert transfer.failure_reason is FailureReason.INSUFFICIENT_FUNDS
-        assert funded.statement(PAYER).balance == 100_000
-        assert funded.statement(PAYEE).balance == 0
+        assert balance_of(funded, PAYER) == 100_000
+        assert balance_of(funded, PAYEE) == 0
 
     def test_honours_arrival_order_when_funds_run_out(self, ledger: Ledger) -> None:
         ledger.open_account(PAYER, 3_000)
@@ -145,21 +152,21 @@ class TestSettlement:
 
         completed = [t for t in transfers if t.status is TransferStatus.COMPLETED]
         assert completed == transfers[:6]
-        assert ledger.statement(PAYER).balance == 0
+        assert balance_of(ledger, PAYER) == 0
 
     def test_stops_at_the_batch_limit(self, funded: Ledger) -> None:
         for i in range(10):
             submit(funded, 100, f"key-{i}")
 
         assert funded.settle(limit=4) == 4
-        assert funded.statement(PAYEE).balance == 400
+        assert balance_of(funded, PAYEE) == 400
 
     def test_never_settles_a_transfer_twice(self, funded: Ledger) -> None:
         submit(funded, 500, "key-1")
         funded.settle()
 
         assert funded.settle() == 0
-        assert funded.statement(PAYEE).balance == 500
+        assert balance_of(funded, PAYEE) == 500
 
 
 class TestStatement:
@@ -181,6 +188,7 @@ class TestStatement:
         funded.settle()
 
         statement = funded.statement(PAYER)
+        assert statement is not None
 
         assert [e["id"] for e in entries(statement)] == [incoming.id, outgoing.id]
         assert statement.balance == 98_000
@@ -191,6 +199,7 @@ class TestStatement:
         funded.settle()
 
         statement = funded.statement(PAYER)
+        assert statement is not None
         replayed = 100_000 + sum(
             e["amount"] if e["payeeId"] == PAYER else -e["amount"]
             for e in entries(statement)
@@ -210,6 +219,6 @@ def test_conservation_holds_across_a_circular_run(ledger: Ledger) -> None:
         ledger.submit(payer, payee, 500, f"key-{i}")
     ledger.settle()
 
-    balances = [ledger.statement(a).balance for a in accounts]
+    balances = [balance_of(ledger, a) for a in accounts]
     assert sum(balances) == 150_000
     assert all(balance >= 0 for balance in balances)

@@ -6,7 +6,7 @@ from httpx import ASGITransport, AsyncClient
 from vessel.application.settlement import SettlementWorker
 from vessel.domain.ledger import Ledger
 from vessel.domain.transfer import TransferStatus
-from vessel.infrastructure.http.app import create_app
+from vessel.infrastructure.http.app import Message, create_app
 
 PAYER = "acc-payer"
 PAYEE = "acc-payee"
@@ -14,7 +14,7 @@ MISSING_ID = "00000000-0000-4000-8000-000000000000"
 
 
 def transfer_body(
-    amount: int = 2_500,
+    amount: int | float = 2_500,
     key: str = "key-1",
     payer: str = PAYER,
     payee: str = PAYEE,
@@ -126,7 +126,9 @@ class TestCreateTransfer:
         assert body["failureReason"] is None
         assert body["amount"] == 2_500
         assert body["idempotencyKey"] == "key-1"
-        assert ledger.statement(PAYER).balance == 100_000
+        payer_statement = ledger.statement(PAYER)
+        assert payer_statement is not None
+        assert payer_statement.balance == 100_000
 
     async def test_accept_an_amount_beyond_the_balance(
         self, client: AsyncClient
@@ -191,8 +193,12 @@ class TestIdempotency:
             await client.post("/transfers", json=transfer_body())
         ledger.settle()
 
-        assert ledger.statement(PAYER).balance == 97_500
-        assert ledger.statement(PAYEE).balance == 2_500
+        payer_statement = ledger.statement(PAYER)
+        payee_statement = ledger.statement(PAYEE)
+        assert payer_statement is not None
+        assert payee_statement is not None
+        assert payer_statement.balance == 97_500
+        assert payee_statement.balance == 2_500
 
 
 class TestGetTransfer:
@@ -306,8 +312,8 @@ class TestLifespan:
         async def receive() -> dict:
             return next(incoming)
 
-        async def send(message: dict) -> None:
-            sent.append(message["type"])
+        async def send(message: Message) -> None:
+            sent.append(str(message["type"]))
 
         await app({"type": "lifespan"}, receive, send)
 
@@ -332,7 +338,7 @@ class TestLifespan:
         async def receive() -> dict:
             return next(incoming)
 
-        async def send(message: dict) -> None:
+        async def send(message: Message) -> None:
             return None
 
         await app({"type": "lifespan"}, receive, send)
@@ -355,7 +361,7 @@ class TestLifespan:
         async def receive() -> dict:
             return next(incoming)
 
-        async def send(message: dict) -> None:
+        async def send(message: Message) -> None:
             if message["type"] == "lifespan.startup.complete":
                 at_startup.extend(calls)
 
@@ -378,7 +384,7 @@ class TestLifespan:
             await shutdown.wait()
             return {"type": "lifespan.shutdown"}
 
-        async def send(message: dict) -> None:
+        async def send(message: Message) -> None:
             return None
 
         lifespan = asyncio.create_task(app({"type": "lifespan"}, receive, send))

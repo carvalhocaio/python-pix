@@ -1,4 +1,5 @@
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Coroutine, MutableMapping, Sequence
+from typing import Any
 
 import msgspec
 
@@ -8,7 +9,8 @@ from vessel.domain.transfer import Statement
 from vessel.infrastructure.http.router import Route, resolve
 from vessel.infrastructure.http.schemas import decode_account, decode_transfer, encode
 
-Message = dict
+Scope = MutableMapping[str, Any]
+Message = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[Message]]
 Send = Callable[[Message], Awaitable[None]]
 Response = tuple[Message, Message]
@@ -128,11 +130,11 @@ def create_app(
     ledger: Ledger,
     on_startup: Sequence[Hook] = (),
     on_shutdown: Sequence[Hook] = (),
-) -> Callable[[Message, Receive, Send], Awaitable[None]]:
+) -> Callable[[Scope, Receive, Send], Coroutine[Any, Any, None]]:
     statement_of = ledger.statement
     transfer_by_id = ledger.find_transfer
 
-    async def app(scope: Message, receive: Receive, send: Send) -> None:
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await _lifespan(receive, send, on_startup, on_shutdown)
             return
