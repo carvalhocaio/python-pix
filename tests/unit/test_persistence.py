@@ -184,3 +184,21 @@ class TestStop:
         await worker.start()
         await worker.stop()
         await worker.stop()
+
+    async def test_flush_more_than_one_batch(self, store: FakeStore) -> None:
+        journal = FakeJournal([transfer(str(i)) for i in range(25)], [])
+        worker = PersistenceWorker(journal, store, batch_size=10, idle_delay=10.0)
+
+        await worker.stop()
+
+        assert [len(batch) for _, batch in store.calls] == [10, 10, 5]
+
+    async def test_stop_early_when_the_store_is_down(self, store: FakeStore) -> None:
+        store.transfers_fail = True
+        journal = FakeJournal([transfer(str(i)) for i in range(25)], [])
+        worker = PersistenceWorker(journal, store, batch_size=10, idle_delay=10.0)
+
+        await worker.stop()
+
+        assert store.calls == []
+        assert journal.settled_drains == 1

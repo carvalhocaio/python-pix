@@ -64,7 +64,8 @@ class PersistenceWorker:
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-        await self._flush()
+        while await self._flush():
+            pass
 
     async def _run(self) -> None:
         while self._running:
